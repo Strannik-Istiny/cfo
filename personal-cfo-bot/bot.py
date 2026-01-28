@@ -213,7 +213,7 @@ async def start_calculation(message: Message, state: FSMContext):
     # Сброс предыдущих данных
     user_data[message.from_user.id] = {}
     
-    # Начало диалог
+    # Начало диалога
     await message.answer(
         "🎯 <b>Отлично! Давайте рассчитаем ваш персональный бюджет.</b>\n\n"
         "<b>Введите вашу зарплату (основной доход):</b>\n"
@@ -252,6 +252,236 @@ async def process_salary(message: Message, state: FSMContext):
             "<i>Пример: 70000 или 85 000</i>"
         )
 
+@dp.message(BudgetStates.waiting_for_other_income)
+async def process_other_income(message: Message, state: FSMContext):
+    """Обработка дополнительных доходов"""
+    if message.text == "❌ Отменить":
+        await cancel_calculation(message, state)
+        return
+    elif message.text == "⏭ Пропустить":
+        other_income = 0
+    else:
+        try:
+            other_income = int(message.text.replace(" ", "").replace(",", ""))
+            if other_income < 0:
+                raise ValueError
+        except ValueError:
+            await message.answer(
+                "⚠️ <b>Пожалуйста, введите корректное число</b>\n"
+                "<i>Пример: 10000 или 0</i>"
+            )
+            return
+    
+    # Сохраняем данные
+    user_data[message.from_user.id]['other_income'] = other_income
+    
+    await message.answer(
+        f"✅ <b>Дополнительный доход:</b> {format_rubles(other_income)}\n\n"
+        "<b>Введите стоимость аренды жилья (или ипотека):</b>\n"
+        "<i>Если нет, отправьте 0</i>",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.set_state(BudgetStates.waiting_for_rent)
+
+@dp.message(BudgetStates.waiting_for_rent)
+async def process_rent(message: Message, state: FSMContext):
+    """Обработка ввода аренды"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    try:
+        rent = int(message.text.replace(" ", "").replace(",", ""))
+        if rent < 0:
+            raise ValueError
+        
+        user_data[message.from_user.id]['rent'] = rent
+        
+        await message.answer(
+            f"✅ <b>Аренда:</b> {format_rubles(rent)}\n\n"
+            "<b>Введите расходы на транспорт в месяц:</b>\n"
+            "<i>Такси, метро, бензин и т.д. Если нет, отправьте 0</i>",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(BudgetStates.waiting_for_transport)
+        
+    except ValueError:
+        await message.answer(
+            "⚠️ <b>Пожалуйста, введите корректное число</b>\n"
+            "<i>Пример: 30000 или 0</i>"
+        )
+
+@dp.message(BudgetStates.waiting_for_transport)
+async def process_transport(message: Message, state: FSMContext):
+    """Обработка ввода транспортных расходов"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    try:
+        transport = int(message.text.replace(" ", "").replace(",", ""))
+        if transport < 0:
+            raise ValueError
+        
+        user_data[message.from_user.id]['transport'] = transport
+        
+        await message.answer(
+            f"✅ <b>Транспорт:</b> {format_rubles(transport)}\n\n"
+            "<b>Введите другие обязательные платежи в месяц:</b>\n"
+            "<i>Связь, интернет, коммунальные услуги и т.д. Если нет, отправьте 0</i>",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(BudgetStates.waiting_for_other_bills)
+        
+    except ValueError:
+        await message.answer(
+            "⚠️ <b>Пожалуйста, введите корректное число</b>\n"
+            "<i>Пример: 5000 или 0</i>"
+        )
+
+@dp.message(BudgetStates.waiting_for_other_bills)
+async def process_other_bills(message: Message, state: FSMContext):
+    """Обработка ввода прочих платежей"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    try:
+        other_bills = int(message.text.replace(" ", "").replace(",", ""))
+        if other_bills < 0:
+            raise ValueError
+        
+        user_data[message.from_user.id]['other_bills'] = other_bills
+        
+        await message.answer(
+            f"✅ <b>Прочие платежи:</b> {format_rubles(other_bills)}\n\n"
+            "<b>Теперь установим финансовую цель!</b>\n\n"
+            "<b>На что вы хотите накопить?</b>\n"
+            "<i>Пример: 'Отпуск на море', 'Новый ноутбук', 'Автомобиль'</i>",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(BudgetStates.waiting_for_goal_name)
+        
+    except ValueError:
+        await message.answer(
+            "⚠️ <b>Пожалуйста, введите корректное число</b>\n"
+            "<i>Пример: 5000 или 0</i>"
+        )
+
+@dp.message(BudgetStates.waiting_for_goal_name)
+async def process_goal_name(message: Message, state: FSMContext):
+    """Обработка названия цели"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    goal_name = message.text
+    user_data[message.from_user.id]['goal_name'] = goal_name
+    
+    await message.answer(
+        f"✅ <b>Цель:</b> {goal_name}\n\n"
+        f"<b>Какую сумму хотите накопить на {goal_name.lower()}?</b>\n"
+        "<i>Пример: 150000</i>",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.set_state(BudgetStates.waiting_for_goal_amount)
+
+@dp.message(BudgetStates.waiting_for_goal_amount)
+async def process_goal_amount(message: Message, state: FSMContext):
+    """Обработка суммы цели"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    try:
+        goal_amount = int(message.text.replace(" ", "").replace(",", ""))
+        if goal_amount <= 0:
+            raise ValueError
+        
+        user_data[message.from_user.id]['goal_amount'] = goal_amount
+        
+        await message.answer(
+            f"✅ <b>Сумма цели:</b> {format_rubles(goal_amount)}\n\n"
+            "<b>За сколько месяцев вы хотите накопить эту сумму?</b>\n"
+            "<i>Пример: 12 (год), 24 (2 года), 6 (полгода)</i>",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(BudgetStates.waiting_for_goal_months)
+        
+    except ValueError:
+        await message.answer(
+            "⚠️ <b>Пожалуйста, введите корректное число</b>\n"
+            "<i>Пример: 150000</i>"
+        )
+
+@dp.message(BudgetStates.waiting_for_goal_months)
+async def process_goal_months(message: Message, state: FSMContext):
+    """Обработка срока цели и вывод результата"""
+    if message.text == "❌ Отменить расчет":
+        await cancel_calculation(message, state)
+        return
+    
+    try:
+        goal_months = int(message.text.replace(" ", "").replace(",", ""))
+        if goal_months <= 0:
+            raise ValueError
+        
+        user_data[message.from_user.id]['goal_months'] = goal_months
+        
+        # Получаем все данные
+        data = user_data[message.from_user.id]
+        
+        # Выполняем расчет
+        results = calculate_results(data)
+        
+        # Формируем отчет
+        report = f"""
+<b>📊 ВАШ ПЕРСОНАЛЬНЫЙ ФИНАНСОВЫЙ ОТЧЕТ</b>
+
+<b>💳 ДОХОДЫ:</b>
+├ Зарплата: {format_rubles(data['salary'])}
+└ Дополнительный доход: {format_rubles(data.get('other_income', 0))}
+<b>Итого доход: {format_rubles(results['total_income'])}</b>
+
+<b>🏠 РАСХОДЫ:</b>
+├ Аренда жилья: {format_rubles(data.get('rent', 0))}
+├ Транспорт: {format_rubles(data.get('transport', 0))}
+└ Прочие платежи: {format_rubles(data.get('other_bills', 0))}
+<b>Итого расходы: {format_rubles(results['fixed_expenses'])}</b>
+
+<b>🎯 ЦЕЛЬ:</b>
+├ На что копим: {data['goal_name']}
+├ Сумма цели: {format_rubles(data['goal_amount'])}
+└ Срок накопления: {goal_months} месяцев
+<b>Ежемесячный взнос: {format_rubles(results['monthly_contribution'])}</b>
+
+<b>🧮 РАСЧЕТ:</b>
+├ Доходы: {format_rubles(results['total_income'])}
+├ Расходы: {format_rubles(results['fixed_expenses'])}
+├ Взнос на цель: {format_rubles(results['monthly_contribution'])}
+└ <b>Бюджет на траты: {format_rubles(results['monthly_budget'])}</b>
+
+<b>📅 ДНЕВНОЙ ЛИМИТ:</b>
+{format_rubles(results['monthly_budget'])} ÷ 30 дней = <b>{format_rubles(results['daily_limit'])} в день</b>
+
+<b>✅ ИТОГ:</b> Чтобы накопить на {data['goal_name'].lower()} за {goal_months} месяцев, вы можете тратить <b>{format_rubles(results['daily_limit'])} в день</b> на еду, развлечения и прочие нужды.
+
+<b>💎 Каждый день, укладываясь в этот лимит, вы гарантированно достигаете своей цели!</b>
+
+Чтобы начать новый расчет, нажмите «💰 Рассчитать бюджет»
+        """
+        
+        await message.answer(report, reply_markup=get_main_keyboard())
+        
+        # Очищаем состояние
+        await state.clear()
+        
+    except ValueError:
+        await message.answer(
+            "⚠️ <b>Пожалуйста, введите корректное число месяцев</b>\n"
+            "<i>Пример: 12 (год), 24 (2 года)</i>"
+        )
+
 async def cancel_calculation(message: Message, state: FSMContext):
     """Отмена текущего расчета"""
     await state.clear()
@@ -282,28 +512,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-async def health_check(request):
-    return web.Response(text="Bot is alive")
-
-# Запускаем веб-сервер в фоновом режиме
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    await site.start()
-    print("🌐 Health check сервер запущен на порту 8080")
-
-# Добавьте в функцию main():
-async def main():
-    logger.info("🤖 Бот 'Личный CFO' запускается...")
-    
-    # Запускаем health check сервер
-    await start_web_server()
-    
-    # Запускаем бота
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
