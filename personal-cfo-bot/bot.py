@@ -282,3 +282,28 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+async def health_check(request):
+    return web.Response(text="Bot is alive")
+
+# Запускаем веб-сервер в фоновом режиме
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    print("🌐 Health check сервер запущен на порту 8080")
+
+# Добавьте в функцию main():
+async def main():
+    logger.info("🤖 Бот 'Личный CFO' запускается...")
+    
+    # Запускаем health check сервер
+    await start_web_server()
+    
+    # Запускаем бота
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
