@@ -7,6 +7,7 @@
 import os
 import logging
 import asyncio
+import threading
 from typing import Dict
 from dotenv import load_dotenv
 
@@ -23,6 +24,9 @@ from aiogram.types import (
     KeyboardButton
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
+
+# Импорт для веб-сервера
+from aiohttp import web
 
 # ================== КОНФИГУРАЦИЯ ==================
 load_dotenv()
@@ -55,6 +59,23 @@ bot = Bot(
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# ================== ВЕБ-СЕРВЕР ДЛЯ RENDER ==================
+async def health_check(request):
+    """Простой health-check endpoint для Render"""
+    return web.Response(text="✅ Личный CFO Bot is running!")
+
+async def start_web_server():
+    """Запуск веб-сервера на порту 8080"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logger.info("🌐 Health check сервер запущен на порту 8080")
+
 # ================== МАШИНА СОСТОЯНИЙ ==================
 class BudgetStates(StatesGroup):
     """Состояния для пошагового ввода данных"""
@@ -73,6 +94,8 @@ user_data: Dict[int, Dict] = {}
 # ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def format_rubles(amount: int) -> str:
     """Форматирует число в рубли с пробелами-разделителями"""
+    if amount == 0:
+        return "0 ₽"
     return f"{amount:,} ₽".replace(",", " ")
 
 def calculate_results(data: Dict) -> Dict:
@@ -476,6 +499,9 @@ async def process_goal_months(message: Message, state: FSMContext):
         # Очищаем состояние
         await state.clear()
         
+        # Логируем успешный расчет
+        logger.info(f"✅ User {message.from_user.id} completed calculation. Daily limit: {results['daily_limit']} ₽")
+        
     except ValueError:
         await message.answer(
             "⚠️ <b>Пожалуйста, введите корректное число месяцев</b>\n"
@@ -500,10 +526,18 @@ async def main():
     logger.info("=" * 50)
     
     try:
+        # Запускаем веб-сервер для health checks
+        logger.info("🌐 Запуск health check сервера на порту 8080...")
+        web_task = asyncio.create_task(start_web_server())
+        
+        # Даем время веб-серверу запуститься
+        await asyncio.sleep(1)
+        
         # Удаляем вебхук если есть (для чистого запуска)
         await bot.delete_webhook(drop_pending_updates=True)
         
         # Запускаем бота
+        logger.info("🤖 Запуск Telegram бота...")
         await dp.start_polling(bot)
         
     except Exception as e:
